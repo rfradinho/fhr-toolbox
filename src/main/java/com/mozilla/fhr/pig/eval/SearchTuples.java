@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.util.Map;
 
 import org.apache.pig.EvalFunc;
+import org.apache.pig.PigWarning;
 import org.apache.pig.data.BagFactory;
 import org.apache.pig.data.DataBag;
 import org.apache.pig.data.Tuple;
@@ -30,53 +31,59 @@ import org.apache.pig.data.TupleFactory;
 
 public class SearchTuples extends EvalFunc<DataBag> {
 
-	private static final String SEARCHES_KEY = "org.mozilla.searches.counts";
+    private static final String SEARCHES_KEY = "org.mozilla.searches.counts";
 
-	private static BagFactory bagFactory = BagFactory.getInstance();
-	private static TupleFactory tupleFactory = TupleFactory.getInstance();
+    private static BagFactory bagFactory = BagFactory.getInstance();
+    private static TupleFactory tupleFactory = TupleFactory.getInstance();
 
-	@SuppressWarnings("unchecked")
-	@Override
-	public DataBag exec(Tuple input) throws IOException {
+    @SuppressWarnings("unchecked")
+    @Override
+    public DataBag exec(Tuple input) throws IOException {
 
-		if (input == null || input.size() == 0) {
-			return null;
-		}
+        if (input == null || input.size() == 0) {
+            return null;
+        }
 
-		DataBag dbag = bagFactory.newDefaultBag();
+        DataBag dbag = bagFactory.newDefaultBag();
 
-		Map<String,Object> dataPoints = (Map<String,Object>)input.get(0);
-		for (Map.Entry<String, Object> dayEntry : dataPoints.entrySet()) {
+        try {
+            Map<String,Object> dataPoints = (Map<String,Object>)input.get(0);
+            for (Map.Entry<String, Object> dayEntry : dataPoints.entrySet()) {
 
-			String dayStr = dayEntry.getKey();
-			Map<String,Object> dayMap = (Map<String,Object>)dayEntry.getValue();
+                String dayStr = dayEntry.getKey();
+                Map<String,Object> dayMap = (Map<String,Object>)dayEntry.getValue();
 
-			if (dayMap.containsKey(SEARCHES_KEY)) {
+                if (dayMap.containsKey(SEARCHES_KEY)) {
 
-				// search info
-				Map<String,Object> searcheCountMap = (Map<String,Object>)dayMap.get(SEARCHES_KEY);
-				for (Map.Entry<String, Object> searchEntry : searcheCountMap.entrySet()) {
+                    // search info
+                    Map<String,Object> searcheCountMap = (Map<String,Object>)dayMap.get(SEARCHES_KEY);
+                    for (Map.Entry<String, Object> searchEntry : searcheCountMap.entrySet()) {
 
-					// key example: google.searchbar
-					String key = searchEntry.getKey();
-					long count = ((Number)searchEntry.getValue()).longValue();
-					int dotSeparatorPosition = key.indexOf('.');
-					if (dotSeparatorPosition != -1 ) {
-						String engine = key.substring(0, dotSeparatorPosition);
-						String context = key.substring(dotSeparatorPosition+1);
-						if (engine.length()!=0 && context.length()!=0) {
-							Tuple t = tupleFactory.newTuple(4);
-							t.set(0, dayStr);
-							t.set(1, context);
-							t.set(2, engine);
-							t.set(3, count);
-							dbag.add(t);
-						}
-					}
-				}
-			}
-		}
+                        // key example: google.searchbar
+                        String key = searchEntry.getKey();
+                        long count = ((Number)searchEntry.getValue()).longValue();
+                        int dotSeparatorPosition = key.indexOf('.');
+                        if (dotSeparatorPosition != -1 ) {
+                            String engine = key.substring(0, dotSeparatorPosition);
+                            String context = key.substring(dotSeparatorPosition+1);
+                            if (engine.length()!=0 && context.length()!=0) {
+                                Tuple t = tupleFactory.newTuple(4);
+                                t.set(0, dayStr);
+                                t.set(1, context);
+                                t.set(2, engine);
+                                t.set(3, count);
+                                dbag.add(t);
+                            }
+                        }
+                    }
+                }
+            }
 
-		return dbag;
-	}
+        } catch (Exception e) {
+            warn("Parse error: "+e.getMessage(), PigWarning.UDF_WARNING_1);
+            dbag = null;
+        }
+
+        return dbag;
+    }
 }

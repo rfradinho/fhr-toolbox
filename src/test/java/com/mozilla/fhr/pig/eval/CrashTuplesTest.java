@@ -51,7 +51,7 @@ public class CrashTuplesTest {
         "     \"2013-03-14\":{\n" + 
         "       \"org.mozilla.searches.counts\":{ \"_v\":1, \"google.urlbar\":14 },\n" + 
         "       \"org.mozilla.crashes.crashes\":{ \"_v\":1, \"pending\":5 },\n" + 
-        "       \"org.mozilla.appInfo.versions\":{ \"_v\":1, \"version\":[ \"22.0\" ] }\n" + 
+        "       \"org.mozilla.appInfo.versions\":{ \"_v\":1, \"version\":[ \"21.0\", \"22.0\" ] }\n" + 
         "     },\n" + 
         "     \"2013-03-04\":{\n" + 
         "       \"org.mozilla.addons.counts\":{ \"_v\":1, \"extension\":6, \"plugin\":7, \"theme\":1 },\n" + 
@@ -91,6 +91,16 @@ public class CrashTuplesTest {
             assertNotNull("Find day in internal list", abortedSessonCountOnDay.get(dayStr));
             assertEquals("Match aborted session count against internal list for day " + dayStr, abortedSessonCountOnDay.get(dayStr), abortCount);
         }
+    }
+
+    @Test
+    public void getLasterVersionOnlyTest() throws IOException {
+        CrashTuples ct = new CrashTuples();
+        assertNull( ct.getLatestVersionOnly(null));
+        assertEquals( ct.getLatestVersionOnly("21.0"), "21.0");
+        assertEquals( ct.getLatestVersionOnly("21.0|3.4"), "3.4");
+        assertNull( ct.getLatestVersionOnly("|"));
+        assertNull( ct.getLatestVersionOnly("21.0|"));
     }
 
     @SuppressWarnings("unchecked")

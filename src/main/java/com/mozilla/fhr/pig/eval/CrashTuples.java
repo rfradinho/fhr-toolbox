@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.util.Map;
 
 import org.apache.pig.EvalFunc;
+import org.apache.pig.PigWarning;
 import org.apache.pig.data.BagFactory;
 import org.apache.pig.data.DataBag;
 import org.apache.pig.data.Tuple;
@@ -62,57 +63,73 @@ public class CrashTuples extends EvalFunc<DataBag> {
         }
         
         DataBag dbag = bagFactory.newDefaultBag();
-        Map<String,Object> dataPoints = (Map<String,Object>)input.get(0);
-        for (Map.Entry<String, Object> dayEntry : dataPoints.entrySet()) {
-
-            String dayStr = dayEntry.getKey();
-            Map<String,Object> dayMap = (Map<String,Object>)dayEntry.getValue();
-
-            if ((dayMap.containsKey(CRASHES_FIELD) || dayMap.containsKey(ADDON_COUNTS_FIELD)) || dayMap.containsKey(APPSESSIONS_FIELD)) {
-                
-                // crash info
-                Map<String,Object> crashesMap = (Map<String,Object>)dayMap.get(CRASHES_FIELD);
-                int crashCountPending = 0, crashCountSubmitted = 0;
-                if (crashesMap != null) {
-                    crashCountPending = getSafeInt(crashesMap.get(CRASHES_PENDING_FIELD));
-                    crashCountSubmitted = getSafeInt(crashesMap.get(CRASHES_SUBMITTED_FIELD));
-                }
-                
-                // aborted sessions info
-                Map<String,Object> sessionsMap = (Map<String,Object>)dayMap.get(APPSESSIONS_FIELD);
-                int abortedSessionsCount = 0;
-                if (sessionsMap != null) {
-                    DataBag abortedSessionTimesBag = (DataBag) sessionsMap.get(ABORTED_TOTALTIME_FIELD);
-                    if (abortedSessionTimesBag != null)
-                        abortedSessionsCount = (int) abortedSessionTimesBag.size();
-                }
-
-                // addons info
-                Map<String,Object> addonCountMap = (Map<String,Object>)dayMap.get(ADDON_COUNTS_FIELD);
-                int themeCount = 0, extensionCount = 0, pluginCount = 0;
-                if (addonCountMap != null) {
-                    themeCount = getSafeInt(addonCountMap.get(THEME_FIELD));
-                    extensionCount = getSafeInt(addonCountMap.get(EXTENSION_FIELD));
-                    pluginCount = getSafeInt(addonCountMap.get(PLUGIN_FIELD));
-                }
-  
-                VersionOnDate vod = new VersionOnDate("yyyy-MM-dd", dayStr);
-                final String productVersionOnDate = vod.exec(input);
-                
-                Tuple t = tupleFactory.newTuple(8);
-                t.set(0, dayStr);
-                t.set(1, productVersionOnDate);
-                t.set(2, crashCountPending);
-                t.set(3, crashCountSubmitted);          
-                t.set(4, themeCount);
-                t.set(5, extensionCount);
-                t.set(6, pluginCount);
-                t.set(7, abortedSessionsCount);
-                dbag.add(t);
-            }
-        }
         
+        try {
+            
+            Map<String,Object> dataPoints = (Map<String,Object>)input.get(0);
+            for (Map.Entry<String, Object> dayEntry : dataPoints.entrySet()) {
+
+                String dayStr = dayEntry.getKey();
+                Map<String,Object> dayMap = (Map<String,Object>)dayEntry.getValue();
+
+                if ((dayMap.containsKey(CRASHES_FIELD) || dayMap.containsKey(ADDON_COUNTS_FIELD)) || dayMap.containsKey(APPSESSIONS_FIELD)) {
+                    
+                    // crash info
+                    Map<String,Object> crashesMap = (Map<String,Object>)dayMap.get(CRASHES_FIELD);
+                    int crashCountPending = 0, crashCountSubmitted = 0;
+                    if (crashesMap != null) {
+                        crashCountPending = getSafeInt(crashesMap.get(CRASHES_PENDING_FIELD));
+                        crashCountSubmitted = getSafeInt(crashesMap.get(CRASHES_SUBMITTED_FIELD));
+                    }
+                    
+                    // aborted sessions info
+                    Map<String,Object> sessionsMap = (Map<String,Object>)dayMap.get(APPSESSIONS_FIELD);
+                    int abortedSessionsCount = 0;
+                    if (sessionsMap != null) {
+                        DataBag abortedSessionTimesBag = (DataBag) sessionsMap.get(ABORTED_TOTALTIME_FIELD);
+                        if (abortedSessionTimesBag != null)
+                            abortedSessionsCount = (int) abortedSessionTimesBag.size();
+                    }
+
+                    // addons info
+                    Map<String,Object> addonCountMap = (Map<String,Object>)dayMap.get(ADDON_COUNTS_FIELD);
+                    int themeCount = 0, extensionCount = 0, pluginCount = 0;
+                    if (addonCountMap != null) {
+                        themeCount = getSafeInt(addonCountMap.get(THEME_FIELD));
+                        extensionCount = getSafeInt(addonCountMap.get(EXTENSION_FIELD));
+                        pluginCount = getSafeInt(addonCountMap.get(PLUGIN_FIELD));
+                    }
+  
+                    VersionOnDate vod = new VersionOnDate("yyyy-MM-dd", dayStr);
+                    final String productVersionOnDate = getLatestVersionOnly(vod.exec(input));
+                    
+                    Tuple t = tupleFactory.newTuple(8);
+                    t.set(0, dayStr);
+                    t.set(1, productVersionOnDate);
+                    t.set(2, crashCountPending);
+                    t.set(3, crashCountSubmitted);          
+                    t.set(4, themeCount);
+                    t.set(5, extensionCount);
+                    t.set(6, pluginCount);
+                    t.set(7, abortedSessionsCount);
+                    dbag.add(t);
+                }
+            }
+            
+        } catch (Exception e) {
+            warn("Parse error: "+e.getMessage(), PigWarning.UDF_WARNING_1);
+            dbag = null;
+        }
+
         return dbag;
+    }
+
+    String getLatestVersionOnly(String versions) {
+        if(versions==null) return null;
+        int lastVersionIdx = versions.lastIndexOf(VersionOnDate.MULTI_VERSION_DELIMITER);
+        if (lastVersionIdx<0) return versions;
+        if (lastVersionIdx == versions.length()-1) return null;
+        return versions.substring(lastVersionIdx + 1 );
     }
 
 }

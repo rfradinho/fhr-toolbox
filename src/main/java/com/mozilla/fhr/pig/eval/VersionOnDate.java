@@ -27,16 +27,17 @@ import java.util.Iterator;
 import java.util.Map;
 
 import org.apache.pig.EvalFunc;
+import org.apache.pig.PigWarning;
+import org.apache.pig.backend.executionengine.ExecException;
 import org.apache.pig.data.DataBag;
 import org.apache.pig.data.Tuple;
 
 public class VersionOnDate extends EvalFunc<String> {
 
-    public static enum ERRORS { ParseError };
-    
-    private static final String APPINFO_VERSIONS_FIELD = "org.mozilla.appInfo.versions";
-    private static final String VERSION = "version";
-    private static final String MULTI_VERSION_DELIMITER = "|";
+    static final String APPINFO_VERSIONS_FIELD = "org.mozilla.appInfo.versions";
+    static final String V1_VERSION_FIELD = "version";
+    static final String V2_VERSION_FIELD = "appVersion";
+    static final String MULTI_VERSION_DELIMITER = "|";
     
     private final SimpleDateFormat sdf;
     private long perspectiveTime;
@@ -68,33 +69,78 @@ public class VersionOnDate extends EvalFunc<String> {
                     Date d = sdf.parse(dayEntry.getKey());
                     if (d.getTime() <= perspectiveTime && d.getTime() > latestTime) {
                         Map<String,Object> appInfoVersionMap = (Map<String,Object>)dayMap.get(APPINFO_VERSIONS_FIELD);
-                        if (appInfoVersionMap.containsKey(VERSION)) {
-                            DataBag versionBag = (DataBag)appInfoVersionMap.get(VERSION);
-                            StringBuilder sb = new StringBuilder();
-                            Iterator<Tuple> vbIter = versionBag.iterator();
-                            for (int i=0; i < versionBag.size() && vbIter.hasNext(); i++) {
-                                Tuple versionTuple = vbIter.next();
-                                if (versionTuple.size() > 0) {
-                                    sb.append(versionTuple.get(0));
-                                    if (vbIter.hasNext()) {
-                                        sb.append(MULTI_VERSION_DELIMITER);
-                                    }
-                                }
+                        String version = null;
+                        
+                        Integer documentVersion = getDocumentVersionFromMap(appInfoVersionMap);
+                        if (documentVersion != null) {
+                            switch(documentVersion) {
+                            case 1: version = parse_v1(appInfoVersionMap); break;
+                            case 2: version = parse_v2(appInfoVersionMap); break;
+                            default: 
+                                warn("Unsupported doc version " + documentVersion, PigWarning.UDF_WARNING_1);
+                                return null;
                             }
                             
-                            if (sb.length() > 0) {
-                                latestVersion = sb.toString();
+                            if (version != null) {
                                 latestTime = d.getTime();
+                                latestVersion = version;
                             }
                         }
+                        else {
+                            warn( "Error parsing doc version", PigWarning.UDF_WARNING_1);
+                        }
+                        
                     }
                 }
             }
-        } catch (ParseException e) {
-            pigLogger.warn(this, "Error parsing versions date", ERRORS.ParseError);
+        } catch (Exception e) {
+            warn("Parse error: " + e.getMessage(), PigWarning.UDF_WARNING_1);
+            return null;
         }
-        
         return latestVersion;
+    }
+
+    Integer getDocumentVersionFromMap(Map<String, Object> appInfoVersionMap) {
+        Integer ret = null;
+        try {
+            ret = (Integer)appInfoVersionMap.get("_v");
+        } catch (Exception e) {
+            // ignore - return null
+        }
+        return ret;
+    }
+
+    String parse_v1(Map<String, Object> appInfoVersionMap) throws ExecException {
+        StringBuilder sb = null;
+        if (appInfoVersionMap.containsKey(V1_VERSION_FIELD)) {
+            DataBag versionBag = (DataBag)appInfoVersionMap.get(V1_VERSION_FIELD);
+            sb = getVersionsFromArray(versionBag);
+        }
+        return (sb!=null && sb.length()>0) ? sb.toString() : null;
+    }
+
+    String parse_v2(Map<String, Object> appInfoVersionMap) throws ExecException {
+        StringBuilder sb = null;
+        if (appInfoVersionMap.containsKey(V2_VERSION_FIELD)) {
+            DataBag versionBag = (DataBag)appInfoVersionMap.get(V2_VERSION_FIELD);
+            sb = getVersionsFromArray(versionBag);
+        }
+        return (sb!=null && sb.length()>0) ? sb.toString() : null;
+    }
+
+    StringBuilder getVersionsFromArray(DataBag versionBag) throws ExecException {
+        StringBuilder sb = new StringBuilder();
+        Iterator<Tuple> vbIter = versionBag.iterator();
+        for (int i=0; i < versionBag.size() && vbIter.hasNext(); i++) {
+            Tuple versionTuple = vbIter.next();
+            for (int versionTupleIdx=0; versionTupleIdx<versionTuple.size(); versionTupleIdx++) {
+                if (sb.length()>0) {
+                    sb.append(MULTI_VERSION_DELIMITER);
+                }
+                sb.append(versionTuple.get(versionTupleIdx));
+            }
+        }
+        return sb;
     }
 
     

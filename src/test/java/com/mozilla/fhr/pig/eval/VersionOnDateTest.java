@@ -31,6 +31,8 @@ import org.apache.pig.data.Tuple;
 import org.apache.pig.data.TupleFactory;
 import org.junit.Test;
 
+import com.mozilla.pig.eval.json.JsonMap;
+
 public class VersionOnDateTest {
 
     private TupleFactory tupleFactory = TupleFactory.getInstance();
@@ -46,6 +48,7 @@ public class VersionOnDateTest {
         DataBag versionsBag1 = bagFactory.newDefaultBag();
         versionsBag1.add(tupleFactory.newTuple("14.0"));
         versionMap1.put("version", versionsBag1);
+        versionMap1.put("_v", new Integer(1));
         versionInfoMap1.put("org.mozilla.appInfo.versions", versionMap1);
         daysMap.put("2012-08-01", versionInfoMap1);
         
@@ -54,6 +57,7 @@ public class VersionOnDateTest {
         DataBag versionsBag2 = bagFactory.newDefaultBag();
         versionsBag2.add(tupleFactory.newTuple("15.0"));
         versionMap2.put("version", versionsBag2);
+        versionMap2.put("_v", new Integer(1));
         versionInfoMap2.put("org.mozilla.appInfo.versions", versionMap2);
         daysMap.put("2012-09-15", versionInfoMap2);
 
@@ -75,6 +79,7 @@ public class VersionOnDateTest {
         versionsBag1.add(tupleFactory.newTuple("14.0"));
         versionsBag1.add(tupleFactory.newTuple("15.0a1"));
         versionMap1.put("version", versionsBag1);
+        versionMap1.put("_v", new Integer(1));
         versionInfoMap1.put("org.mozilla.appInfo.versions", versionMap1);
         daysMap.put("2012-08-01", versionInfoMap1);
         
@@ -85,4 +90,37 @@ public class VersionOnDateTest {
         assertTrue("14.0|15.0a1".equals(output));
     }
     
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testExec3() throws IOException {
+        String json = FileUtils.readResourceAsString("sample.js");
+        
+        Tuple jsonWrapperTuple = tupleFactory.newTuple();
+        jsonWrapperTuple.append(json);
+        JsonMap jsonMap = new JsonMap();
+        Map<String,Object> documentMap = jsonMap.exec(jsonWrapperTuple);
+        Map<String,Object> dataMap = (Map<String,Object>)documentMap.get("data");
+        Map<String,Object> daysMap = (Map<String,Object>)dataMap.get("days");
+
+        Tuple daysMapWrapperTuple = tupleFactory.newTuple();
+        daysMapWrapperTuple.append(daysMap);
+
+        
+        HashMap<String,String> versionOnDayMap = new HashMap<String, String>();
+        versionOnDayMap.put("2013-03-25", "21.0|21.1");
+        versionOnDayMap.put("2013-03-20", "21.0");
+        versionOnDayMap.put("2013-03-14", "21.0b1");
+        versionOnDayMap.put("2013-03-10", "21.0a1|21.0a2");
+        versionOnDayMap.put("2013-03-04", "21.0a1");
+
+        for (String dayStr : versionOnDayMap.keySet()) {
+            String expectedVersion = versionOnDayMap.get(dayStr);
+
+            VersionOnDate vod = new VersionOnDate("yyyy-MM-dd", dayStr);
+            String output = vod.exec(daysMapWrapperTuple);
+            
+            assertEquals("Match against internal version list for day " + dayStr, expectedVersion, output);
+        }
+    }
+
 }
