@@ -21,8 +21,9 @@ package com.mozilla.fhr.pig.eval;
 
 import java.io.IOException;
 import java.text.ParseException;
-import java.text.SimpleDateFormat;
+import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
@@ -31,6 +32,9 @@ import org.apache.pig.PigWarning;
 import org.apache.pig.backend.executionengine.ExecException;
 import org.apache.pig.data.DataBag;
 import org.apache.pig.data.Tuple;
+import org.apache.pig.parser.ParserException;
+
+import com.mozilla.util.DateUtil;
 
 public class VersionOnDate extends EvalFunc<String> {
 
@@ -39,65 +43,90 @@ public class VersionOnDate extends EvalFunc<String> {
     static final String V2_VERSION_FIELD = "appVersion";
     static final String MULTI_VERSION_DELIMITER = "|";
     
-    private final SimpleDateFormat sdf;
-    private long perspectiveTime;
+    private Date refPerspectiveDate;
+    private Map<Date, String> versionOnDateMap = Collections.emptyMap();
+	private String dateFormat;
     
     public VersionOnDate(String dateFormat, String perspectiveDate) {
-        sdf = new SimpleDateFormat(dateFormat);
         try {
-            Date d = sdf.parse(perspectiveDate);
-            perspectiveTime = d.getTime();
+        	this.dateFormat = dateFormat;
+        	if (perspectiveDate != null) {
+        		refPerspectiveDate = DateUtil.parseAndCacheDate(dateFormat, perspectiveDate);
+        	}
         } catch (ParseException e) {
             throw new IllegalArgumentException("Invalid perspective date", e);
         }
     }
     
     @SuppressWarnings("unchecked")
-    @Override
-    public String exec(Tuple input) throws IOException {
+	void parseInput(Tuple input) {
         if (input == null || input.size() == 0) {
-            return null;
+        	versionOnDateMap = Collections.emptyMap();
+            return;
         }
         
-        String latestVersion = null;
-        long latestTime = 0;
         try {
+        	versionOnDateMap = new HashMap<Date, String>();
+        	
             Map<String,Object> dataPoints = (Map<String,Object>)input.get(0);
             for (Map.Entry<String,Object> dayEntry : dataPoints.entrySet()) {
                 Map<String,Object> dayMap = (Map<String,Object>)dayEntry.getValue();
                 if (dayMap.containsKey(APPINFO_VERSIONS_FIELD)) {
-                    Date d = sdf.parse(dayEntry.getKey());
-                    if (d.getTime() <= perspectiveTime && d.getTime() > latestTime) {
-                        Map<String,Object> appInfoVersionMap = (Map<String,Object>)dayMap.get(APPINFO_VERSIONS_FIELD);
-                        String version = null;
-                        
-                        Integer documentVersion = getDocumentVersionFromMap(appInfoVersionMap);
-                        if (documentVersion != null) {
-                            switch(documentVersion) {
-                            case 1: version = parse_v1(appInfoVersionMap); break;
-                            case 2: version = parse_v2(appInfoVersionMap); break;
-                            default: 
-                                warn("Unsupported doc version " + documentVersion, PigWarning.UDF_WARNING_1);
-                                return null;
-                            }
-                            
-                            if (version != null) {
-                                latestTime = d.getTime();
-                                latestVersion = version;
-                            }
-                        }
-                        else {
-                            warn( "Error parsing doc version", PigWarning.UDF_WARNING_1);
-                        }
-                        
-                    }
+                	Map<String,Object> appInfoVersionMap = (Map<String,Object>)dayMap.get(APPINFO_VERSIONS_FIELD);
+                	Date date = DateUtil.parseAndCacheDate(dateFormat, dayEntry.getKey());
+                	String version = null;
+                	Integer documentVersion = getDocumentVersionFromMap(appInfoVersionMap);
+                	if (documentVersion != null) {
+                		switch(documentVersion) {
+                		case 1: version = parse_v1(appInfoVersionMap); break;
+                		case 2: version = parse_v2(appInfoVersionMap); break;
+                		default:
+                			throw new ParserException("Unsupported doc version " + documentVersion);
+                		}
+
+                		if (version != null) {
+                			versionOnDateMap.put(date, version);
+                		}
+                	}
+                	else {
+            			throw new ParserException("Error parsing doc version");
+                	}
                 }
             }
         } catch (Exception e) {
             warn("Parse error: " + e.getMessage(), PigWarning.UDF_WARNING_1);
-            return null;
+            versionOnDateMap = Collections.emptyMap();
+            return;
+        }
+     }
+
+    String getVersionOnDate(String str) {
+		try {
+			return getVersionOnDate(DateUtil.parseAndCacheDate(dateFormat, str));
+		} catch (ParseException e) {
+			return null;
+		}
+    }
+
+    String getVersionOnDate(Date perspectiveDate) {
+        String latestVersion = null;
+        Date latestDate = null;
+        if(perspectiveDate != null) {
+            for (Date d : versionOnDateMap.keySet()) {
+            	if (!d.after(perspectiveDate) && (latestDate==null || d.after(latestDate))) {
+            		String version = versionOnDateMap.get(d);
+            		latestDate = d;
+            		latestVersion = version;
+            	}
+            }
         }
         return latestVersion;
+    }
+    
+    @Override
+    public String exec(Tuple input) throws IOException {
+    	parseInput(input);
+        return getVersionOnDate(refPerspectiveDate);
     }
 
     Integer getDocumentVersionFromMap(Map<String, Object> appInfoVersionMap) {

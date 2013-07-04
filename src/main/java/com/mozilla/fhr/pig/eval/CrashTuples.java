@@ -65,6 +65,8 @@ public class CrashTuples extends EvalFunc<DataBag> {
         DataBag dbag = bagFactory.newDefaultBag();
         
         try {
+            VersionOnDate vod = new VersionOnDate("yyyy-MM-dd", null);
+            vod.parseInput(input);
             
             Map<String,Object> dataPoints = (Map<String,Object>)input.get(0);
             for (Map.Entry<String, Object> dayEntry : dataPoints.entrySet()) {
@@ -100,8 +102,7 @@ public class CrashTuples extends EvalFunc<DataBag> {
                         pluginCount = getSafeInt(addonCountMap.get(PLUGIN_FIELD));
                     }
   
-                    VersionOnDate vod = new VersionOnDate("yyyy-MM-dd", dayStr);
-                    final String productVersionOnDate = getLatestVersionOnly(vod.exec(input));
+                    final String productVersionOnDate = getLatestVersionOnly(vod.getVersionOnDate(dayStr));
                     
                     Tuple t = tupleFactory.newTuple(8);
                     t.set(0, dayStr);
